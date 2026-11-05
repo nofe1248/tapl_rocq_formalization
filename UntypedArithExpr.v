@@ -125,6 +125,9 @@ Definition normal_form {X : Type}
 Definition step_normal_form t :=
   normal_form step t.
 
+Hint Unfold step_normal_form : untyped_db.
+Hint Unfold normal_form : untyped_db.
+
 Inductive multi {X : Type} (R : relation X) : relation X :=
   | multi_refl : forall (x : X), multi R x x
   | multi_step : forall (x y z : X),
@@ -136,6 +139,29 @@ Inductive multi {X : Type} (R : relation X) : relation X :=
 Hint Constructors multi : untyped_db.
 
 Notation " t '-->*' t' " := (multi step t t') (at level 40).
+
+Theorem multi_R : forall (X : Type) (R : relation X) (x y : X),
+    R x y -> (multi R) x y.
+Proof.
+  intros X R x y H.
+  apply multi_step with y.
+  - apply H.
+  - apply multi_refl.
+Qed.
+
+Theorem multi_trans :
+  forall (X : Type) (R : relation X) (x y z : X),
+      multi R x y  ->
+      multi R y z ->
+      multi R x z.
+Proof.
+  intros X R x y z G H.
+  induction G.
+    - assumption.
+    - apply multi_step with y.
+      + assumption.
+      + apply IHG. assumption.
+Qed.
 
 Example eval_example_1 :
   <{ if (if true then true else false) then pred (succ 0) else 0 }> -->*
@@ -157,18 +183,28 @@ Example eval_example_1' :
   <{ 0 }>.
 Proof. eauto 10 with untyped_db. Qed.
 
+Theorem bv_is_nf : forall t,
+  boolean_value t -> step_normal_form t.
+Proof.
+  intros t Hbv [t' Hstep].
+  induction Hstep; inversion Hbv.
+Qed.
+
+Theorem nv_is_nf : forall t,
+  numeric_value t -> step_normal_form t.
+Proof.
+  intros t Hnv [t' Hstep].
+  induction Hstep; inversion Hnv; auto.
+Qed.
+
 Theorem value_is_nf : forall t,
   value t -> step_normal_form t.
 Proof.
   unfold step_normal_form, normal_form.
-  intros t Hvalue [t' Hstep].
-  induction Hstep;
-    destruct Hvalue as [Hbv | Hnv];
-    try inversion Hbv;
-    try inversion Hnv.
-  apply IHHstep.
-  right.
-  exact H0.
+  intros t Hvalue.
+  destruct Hvalue as [Hbv | Hnv].
+  - exact (bv_is_nf _ Hbv).
+  - exact (nv_is_nf _ Hnv).
 Qed.
 
 Definition stuck t :=
@@ -260,6 +296,172 @@ Proof with eauto with untyped_db.
     + f_equal.
       apply IHHy1.
       exact H0.
+Qed.
+
+Lemma multi_if : forall t1 t1' t2 t3,
+  t1 -->* t1' ->
+  <{ if t1 then t2 else t3 }> -->* <{ if t1' then t2 else t3 }>.
+Proof.
+  intros t1 t1' t2 t3 Ht1.
+  induction Ht1; eauto with untyped_db.
+Qed.
+
+Lemma multi_succ : forall t t',
+  t -->* t' ->
+  <{ succ t }> -->* <{ succ t' }>.
+Proof.
+  intros t t' Ht.
+  induction Ht; eauto with untyped_db.
+Qed.
+
+Lemma multi_pred : forall t t',
+  t -->* t' ->
+  <{ pred t }> -->* <{ pred t' }>.
+Proof.
+  intros t t' Ht.
+  induction Ht; eauto with untyped_db.
+Qed.
+
+Lemma multi_iszero : forall t t',
+  t -->* t' ->
+  <{ iszero t }> -->* <{ iszero t' }>.
+Proof.
+  intros t t' Ht.
+  induction Ht; eauto with untyped_db.
+Qed.
+
+Reserved Notation " t '==>' t' " (at level 40).
+
+Inductive big_step : tm -> tm -> Prop :=
+  | B_Value : forall v,
+      value v ->
+      v ==> v
+  | B_IfTrue : forall t1 t2 t3 v2,
+      t1 ==> <{ true }> ->
+      t2 ==> v2 ->
+      <{ if t1 then t2 else t3 }> ==> v2
+  | B_IfFalse : forall t1 t2 t3 v3,
+      t1 ==> <{ false }> ->
+      t3 ==> v3 ->
+      <{ if t1 then t2 else t3 }> ==> v3
+  | B_Succ : forall t1 nv1,
+      numeric_value nv1 ->
+      t1 ==> nv1 ->
+      <{ succ t1 }> ==> <{ succ nv1 }>
+  | B_PredZero : forall t1,
+      t1 ==> <{ 0 }> ->
+      <{ pred t1 }> ==> <{ 0 }>
+  | B_PredSucc : forall t1 nv1,
+      numeric_value nv1 ->
+      t1 ==> <{ succ nv1 }> ->
+      <{ pred t1 }> ==> nv1
+  | B_IsZeroZero : forall t1,
+      t1 ==> <{ 0 }> ->
+      <{ iszero t1 }> ==> <{ true }>
+  | B_IsZeroSucc : forall t1 nv1,
+      numeric_value nv1 ->
+      t1 ==> <{ succ nv1 }> ->
+      <{ iszero t1 }> ==> <{ false }>
+
+  where " t '==>' t' " := (big_step t t').
+
+Hint Constructors big_step : untyped_db.
+
+Example eval_bigstep_example_1 :
+  <{ if (if true then true else false) then pred (succ 0) else 0 }> ==>
+  <{ 0 }>.
+Proof. 
+  apply B_IfTrue.
+  - apply B_IfTrue; apply B_Value; left; constructor.
+  - apply B_PredSucc; constructor.
+    right.
+    repeat constructor.
+Qed.
+
+Example eval_bigstep_example_1' :
+  <{ if (if true then true else false) then pred (succ 0) else 0 }> ==>
+  <{ 0 }>.
+Proof. eauto 20 with untyped_db. Qed.
+
+Lemma big_step_value : forall t v,
+  t ==> v -> value v.
+Proof with eauto with untyped_db.
+  intros t v Hbs.
+  induction Hbs...
+Qed.
+
+Lemma step_preserves_big_step : forall t t' v,
+  t --> t' ->
+  t' ==> v ->
+  t ==> v.
+Proof with eauto with untyped_db.
+  intros t t' v Hst.
+  generalize dependent v.
+  induction Hst; intros...
+  - inversion H; subst...
+    inversion H0. inversion H1. inversion H1.
+  - inversion H; subst...
+    inversion H0; inversion H1; subst...
+    apply B_Succ...
+  - inversion H. subst...
+  - inversion H0; subst; inversion H; subst...
+  - inversion H; subst...
+    inversion H0; inversion H1.
+  - inversion H. subst.
+    apply B_IsZeroZero, B_Value. right. apply v_zero.
+  - inversion H0. subst.
+    eapply B_IsZeroSucc...
+  - inversion H; subst...
+    inversion H0; inversion H1.
+Qed.
+
+Theorem big_step_complete : forall t v,
+  value v ->
+  t -->* v ->
+  t ==> v.
+Proof.
+  intros t v Hvalue Hst.
+  induction Hst.
+  - apply B_Value.
+    assumption.
+  - pose proof (IHHst Hvalue) as Hyz.
+    pose proof (step_preserves_big_step _ _ _ H Hyz) as Hxz.
+    assumption.
+Qed.
+
+Theorem big_step_sound : forall t v,
+  t ==> v ->
+  t -->* v.
+Proof with eauto with untyped_db.
+  intros t v Hbs.
+  induction Hbs...
+  - eapply multi_trans.
+    + apply multi_if. exact IHHbs1.
+    + eapply multi_step... 
+  - eapply multi_trans.
+    + apply multi_if. exact IHHbs1.
+    + eapply multi_step... 
+  - apply multi_succ. exact IHHbs.
+  - eapply multi_trans.
+    + apply multi_pred. exact IHHbs.
+    + eapply multi_step...
+  - eapply multi_trans.
+    + apply multi_pred. exact IHHbs.
+    + eapply multi_step...
+  - eapply multi_trans.
+    + apply multi_iszero. exact IHHbs.
+    + eapply multi_step...
+  - eapply multi_trans.
+    + apply multi_iszero. exact IHHbs.
+    + eapply multi_step...
+Qed.
+
+Theorem big_step_and_small_step_coincide : forall t v,
+  value v -> t ==> v <-> t -->* v.
+Proof.
+  intros. split.
+  + apply big_step_sound.
+  + apply big_step_complete. assumption.
 Qed.
 
 End UntypedArithExpr.
