@@ -163,7 +163,7 @@ Proof.
       + apply IHG. assumption.
 Qed.
 
-Example eval_example_1 :
+Example small_step_example_1 :
   <{ if (if true then true else false) then pred (succ 0) else 0 }> -->*
   <{ 0 }>.
 Proof. 
@@ -178,7 +178,7 @@ Proof.
       * apply multi_refl.
 Qed.
 
-Example eval_example_1' :
+Example small_step_example_1' :
   <{ if (if true then true else false) then pred (succ 0) else 0 }> -->*
   <{ 0 }>.
 Proof. eauto 10 with untyped_db. Qed.
